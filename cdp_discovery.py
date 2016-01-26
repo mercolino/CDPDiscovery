@@ -26,7 +26,10 @@ def recv_buffer(conn, stop_string):
     receive_buffer = ""
     #Creating the stop string, removing domain form hostname
     m = re.search('(.+?)\.', stop_string)
-    stop_string = m.group(1) + '#'
+    if m:
+        stop_string = m.group(1) + '#'
+    else:
+        stop_string = '#'
     while not stop_string in receive_buffer:
         # Flush the receive buffer
         try:
