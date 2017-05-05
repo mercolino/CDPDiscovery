@@ -1,0 +1,5 @@
+#Ignore Pycharm files
+**/.idea
+
+#Ignore compiled files
+*.pyc
