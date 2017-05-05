@@ -223,6 +223,7 @@ if __name__ == "__main__":
             #Check if the seed value is an ip or a host
             if ip_or_host(sys.argv[1]) == 'ip':
                 address = sys.argv[1]
+                #Get hostname from  dns
                 host = dr.query(rev.from_address(sys.argv[1]), "PTR")[0].to_text()
                 host = host[:host.find('.')]
             elif ip_or_host(sys.argv[1]) == 'host':
