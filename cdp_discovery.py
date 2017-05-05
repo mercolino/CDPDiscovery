@@ -28,24 +28,30 @@ def recv_buffer(conn, stop_string):
     :return: receive_buffer is the buffer received from the ssh command
     """
     receive_buffer = ""
-    #Creating the stop string, removing domain form hostname
+    #Creating the stop string, removing domain from hostname
     m = re.search('(.+?)\.', stop_string)
     if m:
         stop_string = m.group(1) + '#'
     else:
         stop_string = '#'
-    while not stop_string in receive_buffer:
+    i = 0
+    while not (stop_string in receive_buffer):
         # Flush the receive buffer
         try:
             receive_buffer += conn.recv(1024)
         except Exception as e:
-            print bcolors.FAIL + "***********Problem receiving data from {}...".format(stop_string) + bcolors.ENDC
-            print bcolors.FAIL + 'Error: {}'.format(e.message) + bcolors.ENDC
-            return receive_buffer
+            if type(e).__name__ == 'timeout':
+                i += 1
+                if i == 2:
+                    print bcolors.FAIL + "***********Timeout receiving buffer..." + bcolors.ENDC
+                    return receive_buffer + '\n***TIMEOUT ERROR***'
+            else:
+                print bcolors.FAIL + "***********Problem receiving data from {}...".format(stop_string) + bcolors.ENDC
+                print bcolors.FAIL + 'Error: {}'.format(e.message) + bcolors.ENDC
     return receive_buffer
 
 
-def process_output(list):
+def process_cdp_output(list):
     """
     Function created to process the output of the command  /show cdp neighbor detail/
     :param list: The List with the lines of the received response
@@ -91,7 +97,7 @@ def ssh_connect(host, ip, db_conn):
     :param host: Hostname onf the device to connect
     :param ip: IP address of the device to connect
     :param db_conn: Connection to the DB
-    :return: The device info is the same dictionary returned by process_output()
+    :return: The device info is the same dictionary returned by process_cdp_output()
     """
     # Creating the DB Cursor
     cursor = db_conn.cursor()
@@ -127,7 +133,7 @@ def ssh_connect(host, ip, db_conn):
         # Convert data to a list of lines
         data = output.split('\r\n')
         # Process list to get all the data from the device entry in cdp
-        device_info = process_output(data)
+        device_info = process_cdp_output(data)
         remote_conn.send('exit\n')
         ssh.close()
         # Update the DB to status 1 meaning that the device was followed
@@ -241,7 +247,7 @@ if __name__ == "__main__":
                       "status = 0 AND "
                       "(capabilities LIKE '%Router%' OR capabilities LIKE '%Switch%' OR platform LIKE '%AIR%')")
             no_devices = c.fetchone()[0]
-            # Connect to the rest of devices
+            # Connect to the rest of de  output = ssh_connect(host, address, conn)vices
             while no_devices != 0:
                 # Select the device
                 c.execute("SELECT * FROM devices WHERE "
