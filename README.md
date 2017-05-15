@@ -3,10 +3,13 @@
 Script to discover a network using CDP, it requires SQLite3 installed and paramiko library.
 
 **Usage:**
-cdp_discovery.py Seed_Host username password
+cdp_discovery.py Seed(s)_Host(s) username password
 cdp_discovery.py report [tsv|txt]
 
-- **Seed_Host**: Is the first host used to begin discover the network
+- **Seed(s)_Host(s)**: Is the first host or hosts used to begin discover the network, it could be a hostname, ip address or a combination of hosts and ip address in a comma separated list
+    - **i.e.** 10.10.10.1
+    - **i.e.** host.domain.com
+    - **i.e.** 10.10.10.1,host1.domain.com,host2.domain.com,10.10.10.100
 - **username and password**: are the credential to connect to each device
 
 If you want to generate a report use the command report and you could choose between two formats:
