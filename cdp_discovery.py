@@ -234,7 +234,12 @@ if __name__ == "__main__":
                 host = host[:host.find('.')]
             elif ip_or_host(sys.argv[1]) == 'host':
                 #If host query the name to return the ip address
-                ip_from_host = dr.query(sys.argv[1])
+                try:
+                    ip_from_host = dr.query(sys.argv[1])
+                except Exception as e:
+                    print bcolors.FAIL + "***********Problem resolving the hostname {}...".format(
+                        sys.argv[1]) + bcolors.ENDC
+                    sys.exit(1)
                 ip_from_host = ip_from_host[0].address
                 address = ip_from_host
                 host = sys.argv[1]
