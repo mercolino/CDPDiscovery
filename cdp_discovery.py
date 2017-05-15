@@ -203,7 +203,8 @@ def help():
     :return: NULL
     """
     print bcolors.BOLD + bcolors.UNDERLINE + "Usage:" + bcolors.ENDC
-    print bcolors.BOLD + "\tcdp_discovery seed_host username password" + bcolors.ENDC
+    print bcolors.BOLD + "\tcdp_discovery seed(s)_host(s) username password" + bcolors.ENDC
+    print bcolors.BOLD + "\t\tseed(s)_host(s): This can be a single host or multiple hosts separated by comma" + bcolors.ENDC
     print bcolors.BOLD + "\tcdp_discovery report [tsv|txt]" +bcolors.ENDC
 
 
@@ -213,7 +214,7 @@ if __name__ == "__main__":
         help()
     else:
         # Connect to Devices
-        if sys.argv[1] != 'report':
+        if sys.argv[1] != 'report' and len(sys.argv) == 4:
             # Connecting to the DB
             print bcolors.HEADER + 'Connecting to the database...' + bcolors.ENDC
             conn = sqlite3.connect('cdp.db')
@@ -277,7 +278,7 @@ if __name__ == "__main__":
                 print bcolors.HEADER + "#         {}            #".format(no_devices) + bcolors.ENDC
                 print bcolors.HEADER + "#########################" + bcolors.ENDC
             conn.close()
-        else:
+        elif sys.argv[1] == 'report' and len(sys.argv) == 3:
             # Generate Report
             print bcolors.HEADER + "Generating Report..." + bcolors.ENDC
             conn = sqlite3.connect('cdp.db')
@@ -310,3 +311,5 @@ if __name__ == "__main__":
             else:
                 help()
             conn.close()
+        else:
+            help()
