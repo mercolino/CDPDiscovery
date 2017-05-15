@@ -173,6 +173,26 @@ def insert_in_devices(conn2, info2):
             print bcolors.OKBLUE + "Device {} already exists in the DB...".format(info2[device2]['hostname']) + bcolors.ENDC
 
 
+def check_if_in_table(conn2, host2):
+    """
+    Function to check if a device is already on the Database
+    :param conn2: Database Connection
+    :param host2: Host to check
+    :return: True or False
+    """
+    # Creating Cursor
+    c2 = conn2.cursor()
+    print bcolors.HEADER + "Checking that {} is not in the DB...".format(host2) + bcolors.ENDC
+    c2.execute('SELECT COUNT(*) FROM devices WHERE hostname = ?', (host2,))
+    n = c2.fetchone()[0]
+    if n == 0:
+        print bcolors.OKBLUE + "Device {} does not exists in the DB...".format(host2) + bcolors.ENDC
+        return False
+    else:
+        print bcolors.OKBLUE + "Device {} already exists in the DB...".format(host2) + bcolors.ENDC
+        return True
+
+
 def ip_or_host(var):
     """
     Function to determine if a string is a hostname or an ip address
@@ -205,7 +225,7 @@ def help():
     print bcolors.BOLD + bcolors.UNDERLINE + "Usage:" + bcolors.ENDC
     print bcolors.BOLD + "\tcdp_discovery seed(s)_host(s) username password" + bcolors.ENDC
     print bcolors.BOLD + "\t\tseed(s)_host(s): This can be a single host or multiple hosts separated by comma" + bcolors.ENDC
-    print bcolors.BOLD + "\tcdp_discovery report [tsv|txt]" +bcolors.ENDC
+    print bcolors.BOLD + "\tcdp_discovery report [tsv|txt]" + bcolors.ENDC
 
 
 if __name__ == "__main__":
@@ -227,56 +247,64 @@ if __name__ == "__main__":
             print bcolors.HEADER + 'Creating tables...' + bcolors.ENDC
             c.execute('CREATE TABLE devices (id INTEGER PRIMARY KEY, hostname, ip_address,\
              platform, capabilities, status)')
-            #Check if the seed value is an ip or a host
-            if ip_or_host(sys.argv[1]) == 'ip':
-                address = sys.argv[1]
-                #Get hostname from  dns
-                host = dr.query(rev.from_address(sys.argv[1]), "PTR")[0].to_text()
-                host = host[:host.find('.')]
-            elif ip_or_host(sys.argv[1]) == 'host':
-                #If host query the name to return the ip address
-                try:
-                    ip_from_host = dr.query(sys.argv[1])
-                except Exception as e:
-                    print bcolors.FAIL + "***********Problem resolving the hostname {}...".format(
-                        sys.argv[1]) + bcolors.ENDC
-                    sys.exit(1)
-                ip_from_host = ip_from_host[0].address
-                address = ip_from_host
-                host = sys.argv[1]
-            # Connect and process the seed device
-            output = ssh_connect(host, address, conn)
-            if output != 'problem':
-                insert_in_devices(conn, output)
-            # Check there are still devices to connect to
-            c.execute("SELECT COUNT(*) FROM devices WHERE "
-                      "status = 0 AND "
-                      "(capabilities LIKE '%Router%' OR capabilities LIKE '%Switch%' OR platform LIKE '%AIR%')")
-            no_devices = c.fetchone()[0]
-            # Connect to the rest of de  output = ssh_connect(host, address, conn)vices
-            while no_devices != 0:
-                # Select the device
-                c.execute("SELECT * FROM devices WHERE "
-                      "status = 0 AND "
-                      "(capabilities LIKE '%Router%' OR capabilities LIKE '%Switch%' OR platform LIKE '%AIR%')"
-                      "LIMIT 1")
-                resp = c.fetchone()
-                hostname = resp[1]
-                ip_address = resp[2]
-                # Connect to device
-                output = ssh_connect(hostname, ip_address, conn)
-                if output != 'problem':
-                    # Insert info on DB
-                    insert_in_devices(conn, output)
-                # Check again for devices to connect on DB
-                c.execute("SELECT COUNT(*) FROM devices WHERE "
-                      "status = 0 AND "
-                      "(capabilities LIKE '%Router%' OR capabilities LIKE '%Switch%' OR platform LIKE '%AIR%')")
-                no_devices = c.fetchone()[0]
-                print bcolors.HEADER + "#########################" + bcolors.ENDC
-                print bcolors.HEADER + "# Devices to connect... #" + bcolors.ENDC
-                print bcolors.HEADER + "#         {}            #".format(no_devices) + bcolors.ENDC
-                print bcolors.HEADER + "#########################" + bcolors.ENDC
+            #Converting seed host in a list
+            seed_host_list = sys.argv[1].split(',')
+            #Iterate through the seed host list for multiple seed hosts
+            for seed_host in seed_host_list:
+                #Strip any whitespaces from the seed host
+                seed_host = seed_host.strip()
+                #Check if the seed host is not already on the Database
+                if not check_if_in_table(conn, seed_host):
+                    #Check if the seed value is an ip or a host
+                    if ip_or_host(sys.argv[1]) == 'ip':
+                        address = sys.argv[1]
+                        #Get hostname from  dns
+                        host = dr.query(rev.from_address(seed_host), "PTR")[0].to_text()
+                        host = host[:host.find('.')]
+                    elif ip_or_host(seed_host) == 'host':
+                        #If host query the name to return the ip address
+                        try:
+                            ip_from_host = dr.query(seed_host)
+                        except Exception as e:
+                            print bcolors.FAIL + "***********Problem resolving the hostname {}...".format(
+                                seed_host) + bcolors.ENDC
+                            continue
+                        ip_from_host = ip_from_host[0].address
+                        address = ip_from_host
+                        host = seed_host
+                    # Connect and process the seed device
+                    output = ssh_connect(host, address, conn)
+                    if output != 'problem':
+                        insert_in_devices(conn, output)
+                    # Check if there are still devices to connect to
+                    c.execute("SELECT COUNT(*) FROM devices WHERE "
+                              "status = 0 AND "
+                              "(capabilities LIKE '%Router%' OR capabilities LIKE '%Switch%' OR platform LIKE '%AIR%')")
+                    no_devices = c.fetchone()[0]
+                    # Connect to the rest of the devices
+                    while no_devices != 0:
+                        # Select the device
+                        c.execute("SELECT * FROM devices WHERE "
+                              "status = 0 AND "
+                              "(capabilities LIKE '%Router%' OR capabilities LIKE '%Switch%' OR platform LIKE '%AIR%')"
+                              "LIMIT 1")
+                        resp = c.fetchone()
+                        hostname = resp[1]
+                        ip_address = resp[2]
+                        # Connect to device
+                        output = ssh_connect(hostname, ip_address, conn)
+                        if output != 'problem':
+                            # Insert info on DB
+                            insert_in_devices(conn, output)
+                        # Check again for devices to connect on DB
+                        c.execute("SELECT COUNT(*) FROM devices WHERE "
+                              "status = 0 AND "
+                              "(capabilities LIKE '%Router%' OR capabilities LIKE '%Switch%' OR platform LIKE '%AIR%')")
+                        no_devices = c.fetchone()[0]
+                        print bcolors.HEADER + "#########################" + bcolors.ENDC
+                        print bcolors.HEADER + "# Devices to connect... #" + bcolors.ENDC
+                        print bcolors.HEADER + "#         {}            #".format(no_devices) + bcolors.ENDC
+                        print bcolors.HEADER + "#########################" + bcolors.ENDC
             conn.close()
         elif sys.argv[1] == 'report' and len(sys.argv) == 3:
             # Generate Report
