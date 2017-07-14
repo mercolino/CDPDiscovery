@@ -5,6 +5,9 @@ import re
 import dns.resolver as dr
 import dns.reversename as rev
 
+#Constants used on the script
+#Timeout for ssh connections and buffer receiving
+TIMEOUT = 10
 
 class bcolors:
     HEADER = '\033[95m'
@@ -58,6 +61,7 @@ def process_cdp_output(list):
     :return: it returns a dictionary like {no_device: {hostname: , ip_address: , platform: , capabilities: }...}
     """
     i = 0
+    u = 0
     device = 0
     dict = {}
     for entry in list:
@@ -81,8 +85,16 @@ def process_cdp_output(list):
                 platform = m.group(1)
                 capabilities = m.group(2)
             else:
-                platform = 'N/A'
-                capabilities = 'N/A'
+                u += 1
+                for l in list[i+u+4:]:
+                    m = re.search('Platform:\s*(.*),\s*Capabilities:\s*(.*)\s', l)
+                    if m:
+                        platform = m.group(1)
+                        capabilities = m.group(2)
+                        break
+                    else:
+                        platform = 'N/A'
+                        capabilities = 'N/A'
             dict[device] = {'hostname': hostname,
                             'ip_address': ip_address,
                             'platform': platform,
@@ -105,10 +117,10 @@ def ssh_connect(host, ip, db_conn):
     ssh = paramiko.SSHClient()
     # Do not stop if the ssh key is not in memory
     ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-    print bcolors.HEADER + "Connecting to {}...".format(host) + bcolors.ENDC
+    print bcolors.HEADER + "Connecting to {}({})...".format(host,ip) + bcolors.ENDC
     # Connecting....
     try:
-        ssh.connect(ip, username=sys.argv[2], password=sys.argv[3], timeout=10)
+        ssh.connect(ip, username=sys.argv[2], password=sys.argv[3], timeout=TIMEOUT)
     except Exception as e:
         print bcolors.FAIL + "*****************Problem Connecting to {}...".format(host) + bcolors.ENDC
         print bcolors.FAIL + "*****************Error: {}".format(e.message) + bcolors.ENDC
@@ -122,7 +134,7 @@ def ssh_connect(host, ip, db_conn):
     else:
         # Invoke shell
         remote_conn = ssh.invoke_shell()
-        remote_conn.settimeout(10)
+        remote_conn.settimeout(TIMEOUT)
         dummy = recv_buffer(remote_conn, host)
         remote_conn.send('terminal length 0\n')
         dummy = recv_buffer(remote_conn, host)
@@ -272,6 +284,11 @@ if __name__ == "__main__":
                         ip_from_host = ip_from_host[0].address
                         address = ip_from_host
                         host = seed_host
+                    # Insert Seed device on the Database
+                    insert_in_devices(conn, {1:{'hostname': host,
+                                            'ip_address': address,
+                                             'platform': 'Seed',
+                                             'capabilities': 'Seed'}})
                     # Connect and process the seed device
                     output = ssh_connect(host, address, conn)
                     if output != 'problem':
@@ -316,7 +333,7 @@ if __name__ == "__main__":
                 f = open('report.txt', 'w')
                 try:
                     rows = c.execute("SELECT * FROM devices WHERE "
-                                     "capabilities LIKE '%Router%' OR capabilities LIKE '%Switch%'")
+                                     "capabilities LIKE '%Router%' OR capabilities LIKE '%Switch%' OR capabilities LIKE '%Seed%'")
                 except Exception as e:
                     print bcolors.FAIL + "Error: {}".format(e.message) + bcolors.ENDC
                     sys.exit(1)
