@@ -1,0 +1,11 @@
+#Ignore Pycharm files
+**/.idea
+
+#Ignore compiled files
+*.pyc
+
+#Ignore Database
+*.db
+
+#Ignore Reports
+report.txt
