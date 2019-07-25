@@ -5,6 +5,7 @@ import re
 import dns.resolver as dr
 import dns.reversename as rev
 
+
 #Constants used on the script
 #Timeout for ssh connections and buffer receiving
 TIMEOUT = 10
@@ -19,9 +20,11 @@ class bcolors:
     BOLD = '\033[1m'
     UNDERLINE = '\033[4m'
 
+
 class Error(Exception):
     """Base Class for exceptions in this module"""
     pass
+
 
 def recv_buffer(conn, stop_string):
     """
@@ -41,52 +44,52 @@ def recv_buffer(conn, stop_string):
     while not (stop_string in receive_buffer):
         # Flush the receive buffer
         try:
-            receive_buffer += conn.recv(1024)
+            receive_buffer += conn.recv(1024).decode('utf-8')
         except Exception as e:
             if type(e).__name__ == 'timeout':
                 i += 1
                 if i == 2:
-                    print bcolors.FAIL + "***********Timeout receiving buffer..." + bcolors.ENDC
+                    print(bcolors.FAIL + "***********Timeout receiving buffer..." + bcolors.ENDC)
                     return receive_buffer + '\n***TIMEOUT ERROR***'
             else:
-                print bcolors.FAIL + "***********Problem receiving data from {}...".format(stop_string) + bcolors.ENDC
-                print bcolors.FAIL + 'Error: {}'.format(e.message) + bcolors.ENDC
+                print(bcolors.FAIL + "***********Problem receiving data from {}...".format(stop_string) + bcolors.ENDC)
+                print(bcolors.FAIL + 'Error: {}'.format(e.args[0]) + bcolors.ENDC)
     return receive_buffer
 
 
-def process_cdp_output(list):
+def process_cdp_output(entries_list):
     """
     Function created to process the output of the command  /show cdp neighbor detail/
-    :param list: The List with the lines of the received response
+    :param entries_list: The List with the lines of the received response
     :return: it returns a dictionary like {no_device: {hostname: , ip_address: , platform: , capabilities: }...}
     """
     i = 0
     u = 0
     device = 0
     dict = {}
-    for entry in list:
+    for entry in entries_list:
         if re.search('---+', entry):
             device += 1
             # Matching the hostname
-            m = re.search('Device ID:\s*(.*)', list[i+1])
+            m = re.search('Device ID:\s*(.*)', entries_list[i + 1])
             if m:
                 hostname = m.group(1)
             else:
                 hostname = 'N/A'
             # Matching the IP Address
-            m = re.search('IP\saddress:\s*(.*)\s*', list[i+3])
+            m = re.search('IP\saddress:\s*(.*)\s*', entries_list[i + 3])
             if m:
                 ip_address = m.group(1)
             else:
                 ip_address = 'N/A'
             # Matching Platform and capabilities
-            m = re.search('Platform:\s*(.*),\s*Capabilities:\s*(.*)\s', list[i+4])
+            m = re.search('Platform:\s*(.*),\s*Capabilities:\s*(.*)\s', entries_list[i + 4])
             if m:
                 platform = m.group(1)
                 capabilities = m.group(2)
             else:
                 u += 1
-                for l in list[i+u+4:]:
+                for l in entries_list[i + u + 4:]:
                     m = re.search('Platform:\s*(.*),\s*Capabilities:\s*(.*)\s', l)
                     if m:
                         platform = m.group(1)
@@ -117,13 +120,13 @@ def ssh_connect(host, ip, db_conn):
     ssh = paramiko.SSHClient()
     # Do not stop if the ssh key is not in memory
     ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-    print bcolors.HEADER + "Connecting to {}({})...".format(host,ip) + bcolors.ENDC
+    print(bcolors.HEADER + "Connecting to {}({})...".format(host,ip) + bcolors.ENDC)
     # Connecting....
     try:
         ssh.connect(ip, username=sys.argv[2], password=sys.argv[3], timeout=TIMEOUT)
     except Exception as e:
-        print bcolors.FAIL + "*****************Problem Connecting to {}...".format(host) + bcolors.ENDC
-        print bcolors.FAIL + "*****************Error: {}".format(e.message) + bcolors.ENDC
+        print(bcolors.FAIL + "*****************Problem Connecting to {}...".format(host) + bcolors.ENDC)
+        print(bcolors.FAIL + "*****************Error: {}".format(e.args[0]) + bcolors.ENDC)
         cursor.execute('SELECT count(*) FROM devices WHERE hostname = ?', (host,))
         n = cursor.fetchone()[0]
         # If there is a problem connecting update the database with status 2
@@ -168,12 +171,12 @@ def insert_in_devices(conn2, info2):
     c2 = conn2.cursor()
     for device2 in info2:
         # Checking that the host is not already on the DB
-        print bcolors.HEADER + "Checking that {} is not in the DB...".format(info2[device2]['hostname']) + bcolors.ENDC
+        print(bcolors.HEADER + "Checking that {} is not in the DB...".format(info2[device2]['hostname']) + bcolors.ENDC)
         c2.execute('SELECT COUNT(*) FROM devices WHERE hostname = ?', (info2[device2]['hostname'],))
         n = c2.fetchone()[0]
         if n == 0:
             # Inserting the Device on the DB
-            print bcolors.OKGREEN + "Inserting into DEVICES {}...".format(info2[device2]['hostname']) + bcolors.ENDC
+            print(bcolors.OKGREEN + "Inserting into DEVICES {}...".format(info2[device2]['hostname']) + bcolors.ENDC)
             c2.execute('INSERT INTO devices(hostname, ip_address, platform, capabilities, status)\
              VALUES(?,?,?,?,?)', (info2[device2]['hostname'],
                                   info2[device2]['ip_address'],
@@ -182,7 +185,7 @@ def insert_in_devices(conn2, info2):
                                   0))
             conn2.commit()
         else:
-            print bcolors.OKBLUE + "Device {} already exists in the DB...".format(info2[device2]['hostname']) + bcolors.ENDC
+            print(bcolors.OKBLUE + "Device {} already exists in the DB...".format(info2[device2]['hostname']) + bcolors.ENDC)
 
 
 def check_if_in_table(conn2, host2):
@@ -194,14 +197,14 @@ def check_if_in_table(conn2, host2):
     """
     # Creating Cursor
     c2 = conn2.cursor()
-    print bcolors.HEADER + "Checking that {} is not in the DB...".format(host2) + bcolors.ENDC
+    print(bcolors.HEADER + "Checking that {} is not in the DB...".format(host2) + bcolors.ENDC)
     c2.execute('SELECT COUNT(*) FROM devices WHERE hostname = ?', (host2,))
     n = c2.fetchone()[0]
     if n == 0:
-        print bcolors.OKBLUE + "Device {} does not exists in the DB...".format(host2) + bcolors.ENDC
+        print(bcolors.OKBLUE + "Device {} does not exists in the DB...".format(host2) + bcolors.ENDC)
         return False
     else:
-        print bcolors.OKBLUE + "Device {} already exists in the DB...".format(host2) + bcolors.ENDC
+        print(bcolors.OKBLUE + "Device {} already exists in the DB...".format(host2) + bcolors.ENDC)
         return True
 
 
@@ -234,10 +237,10 @@ def help():
     Function for HELP
     :return: NULL
     """
-    print bcolors.BOLD + bcolors.UNDERLINE + "Usage:" + bcolors.ENDC
-    print bcolors.BOLD + "\tcdp_discovery seed(s)_host(s) username password" + bcolors.ENDC
-    print bcolors.BOLD + "\t\tseed(s)_host(s): This can be a single host or multiple hosts separated by comma" + bcolors.ENDC
-    print bcolors.BOLD + "\tcdp_discovery report [tsv|txt]" + bcolors.ENDC
+    print(bcolors.BOLD + bcolors.UNDERLINE + "Usage:" + bcolors.ENDC)
+    print(bcolors.BOLD + "\tcdp_discovery seed(s)_host(s) username password" + bcolors.ENDC)
+    print(bcolors.BOLD + "\t\tseed(s)_host(s): This can be a single host or multiple hosts separated by comma" + bcolors.ENDC)
+    print(bcolors.BOLD + "\tcdp_discovery report [tsv|txt]" + bcolors.ENDC)
 
 
 if __name__ == "__main__":
@@ -248,15 +251,15 @@ if __name__ == "__main__":
         # Connect to Devices
         if sys.argv[1] != 'report' and len(sys.argv) == 4:
             # Connecting to the DB
-            print bcolors.HEADER + 'Connecting to the database...' + bcolors.ENDC
+            print(bcolors.HEADER + 'Connecting to the database...' + bcolors.ENDC)
             conn = sqlite3.connect('cdp.db')
             c = conn.cursor()
             # Drop the tables
-            print bcolors.HEADER + 'Droping tables...' + bcolors.ENDC
+            print(bcolors.HEADER + 'Droping tables...' + bcolors.ENDC)
             c.execute('DROP TABLE IF EXISTS devices')
             conn.commit()
             # Create the tables
-            print bcolors.HEADER + 'Creating tables...' + bcolors.ENDC
+            print(bcolors.HEADER + 'Creating tables...' + bcolors.ENDC)
             c.execute('CREATE TABLE devices (id INTEGER PRIMARY KEY, hostname, ip_address,\
              platform, capabilities, status)')
             #Converting seed host in a list
@@ -278,8 +281,8 @@ if __name__ == "__main__":
                         try:
                             ip_from_host = dr.query(seed_host)
                         except Exception as e:
-                            print bcolors.FAIL + "***********Problem resolving the hostname {}...".format(
-                                seed_host) + bcolors.ENDC
+                            print(bcolors.FAIL + "***********Problem resolving the hostname {}...".format(
+                                seed_host) + bcolors.ENDC)
                             continue
                         ip_from_host = ip_from_host[0].address
                         address = ip_from_host
@@ -318,14 +321,14 @@ if __name__ == "__main__":
                               "status = 0 AND "
                               "(capabilities LIKE '%Router%' OR capabilities LIKE '%Switch%' OR platform LIKE '%AIR%')")
                         no_devices = c.fetchone()[0]
-                        print bcolors.HEADER + "#########################" + bcolors.ENDC
-                        print bcolors.HEADER + "# Devices to connect... #" + bcolors.ENDC
-                        print bcolors.HEADER + "#         {}            #".format(no_devices) + bcolors.ENDC
-                        print bcolors.HEADER + "#########################" + bcolors.ENDC
+                        print(bcolors.HEADER + "#########################" + bcolors.ENDC)
+                        print(bcolors.HEADER + "# Devices to connect... #" + bcolors.ENDC)
+                        print(bcolors.HEADER + "#         {}            #".format(no_devices) + bcolors.ENDC)
+                        print(bcolors.HEADER + "#########################" + bcolors.ENDC)
             conn.close()
         elif sys.argv[1] == 'report' and len(sys.argv) == 3:
             # Generate Report
-            print bcolors.HEADER + "Generating Report..." + bcolors.ENDC
+            print(bcolors.HEADER + "Generating Report..." + bcolors.ENDC)
             conn = sqlite3.connect('cdp.db')
             c = conn.cursor()
             # Text Format
@@ -335,24 +338,24 @@ if __name__ == "__main__":
                     rows = c.execute("SELECT * FROM devices WHERE "
                                      "capabilities LIKE '%Router%' OR capabilities LIKE '%Switch%' OR capabilities LIKE '%Seed%'")
                 except Exception as e:
-                    print bcolors.FAIL + "Error: {}".format(e.message) + bcolors.ENDC
+                    print(bcolors.FAIL + "Error: {}".format(e.args[0]) + bcolors.ENDC)
                     sys.exit(1)
                 for row in rows:
                     f.write(row[2] + ' ' + row[1] + ' ssh\n')
                 f.close()
-                print bcolors.OKGREEN + "Report generated Successfuly!!!" + bcolors.ENDC
+                print(bcolors.OKGREEN + "Report generated Successfuly!!!" + bcolors.ENDC)
             # Generate report on Tab separated values format
             elif sys.argv[2] == 'tsv':
                 f = open('report.tsv', 'w')
                 try:
                     rows = c.execute("SELECT * FROM devices")
                 except Exception as e:
-                    print bcolors.FAIL + "Error: {}".format(e.message) + bcolors.ENDC
+                    print(bcolors.FAIL + "Error: {}".format(e.args[0]) + bcolors.ENDC)
                     sys.exit(1)
                 for row in rows:
                     f.write(str(row[0]) + '\t' + row[1] + '\t' + row[2] + '\t' + row[3] + '\t' + row[4] + '\n')
                 f.close()
-                print bcolors.OKGREEN + "Report generated Successfuly!!!" + bcolors.ENDC
+                print(bcolors.OKGREEN + "Report generated Successfuly!!!" + bcolors.ENDC)
             else:
                 help()
             conn.close()

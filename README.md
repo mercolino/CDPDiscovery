@@ -19,3 +19,4 @@ If you want to generate a report use the command report and you could choose bet
 - **tsv**: Generate a list of all the devices found on the network and on a tab separated value that can be imported in excel.
 
 **Note:** This software is provided AS-IS and without any type of guarantee that will work or will discover all the devices on your network. If you use this software you agree that it is you responsbility and i do not have any kind of responsability if something happens with your network.
+Also there is support for Python 3

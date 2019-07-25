@@ -1,0 +1,3 @@
+dnspython
+dnspython3
+paramiko
