@@ -1,6 +1,6 @@
 # CDPDiscovery
 
-Script to discover a network using CDP, it requires SQLite3 installed and paramiko library.
+Script to discover a network using CDP, it requires SQLite3 installed and paramiko library. there is also an asynchronous version that reduce the time to connect to dvices and handling sqlite3, asyncio, netdev and aiosqlite are required
 
 **Usage:**
 cdp_discovery.py Seed(s)_Host(s) username password
