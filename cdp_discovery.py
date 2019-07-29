@@ -4,11 +4,12 @@ import sqlite3
 import re
 import dns.resolver as dr
 import dns.reversename as rev
+import time
 
 
 #Constants used on the script
 #Timeout for ssh connections and buffer receiving
-TIMEOUT = 10
+TIMEOUT = 5
 
 class bcolors:
     HEADER = '\033[95m'
@@ -28,7 +29,7 @@ class Error(Exception):
 
 def recv_buffer(conn, stop_string):
     """
-    Function created to process and get the received data from teh ssh connection
+    Function created to process and get the received data from the ssh connection
     :param conn: The ssh client connection
     :param stop_string: The stop string, basically the string to wait to stop receiving the buffer
     :return: receive_buffer is the buffer received from the ssh command
@@ -244,6 +245,7 @@ def help():
 
 
 if __name__ == "__main__":
+    start_time = time.time()
     # Check that the call has the right number of parameters
     if len(sys.argv) not in [3, 4]:
         help()
@@ -361,3 +363,6 @@ if __name__ == "__main__":
             conn.close()
         else:
             help()
+    elapsed_time = time.time() - start_time
+    print((bcolors.OKGREEN + "#" * 50 + "\n" + bcolors.ENDC) * 2)
+    print(bcolors.OKGREEN + f"Script took {elapsed_time} seconds to run" + bcolors.ENDC)

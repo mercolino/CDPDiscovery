@@ -1,3 +1,6 @@
+aiodns
+netdev
+asyncssh
 dnspython
 dnspython3
 paramiko
