@@ -6,11 +6,12 @@ import re
 import netdev
 import time
 
-#Constants used on the script
-#Timeout for ssh connections and buffer receiving
+# Constants used on the script
+# Timeout for ssh connections and buffer receiving
 TIMEOUT = 5
 
-class bcolors:
+
+class BColors:
     HEADER = '\033[95m'
     OKBLUE = '\033[94m'
     OKGREEN = '\033[92m'
@@ -26,15 +27,15 @@ class Error(Exception):
     pass
 
 
-def help():
+def help_function():
     """
     Function for HELP
     :return: NULL
     """
-    print(bcolors.BOLD + bcolors.UNDERLINE + "Usage:" + bcolors.ENDC)
-    print(bcolors.BOLD + "\tasync_cdp_discovery seed(s)_host(s) username password" + bcolors.ENDC)
-    print(bcolors.BOLD + "\t\tseed(s)_host(s): This can be a single host or multiple hosts separated by comma" + bcolors.ENDC)
-    print(bcolors.BOLD + "\tasync_cdp_discovery report [tsv|txt]" + bcolors.ENDC)
+    print(BColors.BOLD + BColors.UNDERLINE + "Usage:" + BColors.ENDC)
+    print(BColors.BOLD + "\tasync_cdp_discovery seed(s)_host(s) username password" + BColors.ENDC)
+    print(BColors.BOLD + "\t\tseed(s)_host(s): This can be a single host or multiple hosts separated by comma" + BColors.ENDC)
+    print(BColors.BOLD + "\tasync_cdp_discovery report [tsv|txt]" + BColors.ENDC)
 
 
 async def process_cdp_output(entries_list):
@@ -94,13 +95,13 @@ async def ssh_connect(host, ip):
     :return: The device info is the same dictionary returned by process_cdp_output()
     """
     # Connecting to the host
-    print(bcolors.HEADER + "Connecting to {}({})...".format(host, ip) + bcolors.ENDC)
+    print(BColors.HEADER + "Connecting to {}({})...".format(host, ip) + BColors.ENDC)
     try:
         async with netdev.create(username=sys.argv[2], password=sys.argv[3], host=ip, device_type='cisco_ios', timeout=TIMEOUT) as ios:
             cdp_result = await ios.send_command('show cdp neighbor detail')
     except Exception as e:
-        print(bcolors.FAIL + "*****************Problem Connecting to {}...".format(host) + bcolors.ENDC)
-        print(bcolors.FAIL + "*****************Error: {}".format(e.args[0]) + bcolors.ENDC)
+        print(BColors.FAIL + "*****************Problem Connecting to {}...".format(host) + BColors.ENDC)
+        print(BColors.FAIL + "*****************Error: {}".format(e.args[0]) + BColors.ENDC)
         async with aiosqlite.connect('cdp.db') as conn:
             async with conn.execute('SELECT count(*) FROM devices WHERE hostname = ?', (host,)) as cursor:
                 n = await cursor.fetchone()
@@ -129,16 +130,15 @@ async def create_db():
     Function to create the DB
     :return: N/A
     """
-    print(bcolors.HEADER + 'Connecting to the database...' + bcolors.ENDC)
+    print(BColors.HEADER + 'Connecting to the database...' + BColors.ENDC)
     async with aiosqlite.connect('cdp.db') as conn:
         # Drop the tables
-        print(bcolors.HEADER + 'Droping tables...' + bcolors.ENDC)
+        print(BColors.HEADER + 'Droping tables...' + BColors.ENDC)
         await conn.execute('DROP TABLE IF EXISTS devices')
         await conn.commit()
         # Create the tables
-        print(bcolors.HEADER + 'Creating tables...' + bcolors.ENDC)
-        await conn.execute('CREATE TABLE devices (id INTEGER PRIMARY KEY, hostname, ip_address,\
-                     platform, capabilities, status)')
+        print(BColors.HEADER + 'Creating tables...' + BColors.ENDC)
+        await conn.execute('CREATE TABLE devices (id INTEGER PRIMARY KEY, hostname, ip_address, platform, capabilities, status)')
 
 
 async def check_if_in_table(host2):
@@ -147,17 +147,17 @@ async def check_if_in_table(host2):
     :param host2: Host to check
     :return: True or False
     """
-    print(bcolors.HEADER + 'Connecting to the database to check if host is in DB...' + bcolors.ENDC)
+    print(BColors.HEADER + 'Connecting to the database to check if host is in DB...' + BColors.ENDC)
     async with aiosqlite.connect('cdp.db') as conn:
-        print(bcolors.HEADER + f"Checking that {host2} is not in the DB..." + bcolors.ENDC)
+        print(BColors.HEADER + f"Checking that {host2} is not in the DB..." + BColors.ENDC)
         async with conn.execute('SELECT COUNT(*) FROM devices WHERE hostname = ?', (host2,)) as cursor:
             n = await cursor.fetchone()
             n = n[0]
             if n == 0:
-                print(bcolors.OKBLUE + "Device {} does not exists in the DB...".format(host2) + bcolors.ENDC)
+                print(BColors.OKBLUE + "Device {} does not exists in the DB...".format(host2) + BColors.ENDC)
                 return False
             else:
-                print(bcolors.OKBLUE + "Device {} already exists in the DB...".format(host2) + bcolors.ENDC)
+                print(BColors.OKBLUE + "Device {} already exists in the DB...".format(host2) + BColors.ENDC)
                 return True
 
 
@@ -167,17 +167,17 @@ async def insert_in_devices(info2):
     :param info2: Dictionary with the devices gathered from processing the output of the sh cdp neighbor detail
     :return: NULL
     """
-    print(bcolors.HEADER + 'Connecting to the database to insert devices in DB...' + bcolors.ENDC)
+    print(BColors.HEADER + 'Connecting to the database to insert devices in DB...' + BColors.ENDC)
     async with aiosqlite.connect('cdp.db') as conn:
         for device2 in info2:
             # Checking that the host is not already on the DB
-            print(bcolors.HEADER + f"Checking that {info2[device2]['hostname']} is not in the DB..." + bcolors.ENDC)
+            print(BColors.HEADER + f"Checking that {info2[device2]['hostname']} is not in the DB..." + BColors.ENDC)
             async with conn.execute('SELECT COUNT(*) FROM devices WHERE hostname = ?', (info2[device2]['hostname'],)) as cursor:
                 n = await cursor.fetchone()
                 n = n[0]
                 if n == 0:
                     # Inserting the Device in the DB
-                    print(bcolors.OKGREEN + f"Inserting into DEVICES {info2[device2]['hostname']}..." + bcolors.ENDC)
+                    print(BColors.OKGREEN + f"Inserting into DEVICES {info2[device2]['hostname']}..." + BColors.ENDC)
                     await conn.execute('INSERT INTO devices(hostname, ip_address, platform, capabilities, status)\
                          VALUES(?,?,?,?,?)', (info2[device2]['hostname'],
                                               info2[device2]['ip_address'],
@@ -186,7 +186,7 @@ async def insert_in_devices(info2):
                                               0))
                     await conn.commit()
                 else:
-                    print(bcolors.OKBLUE + "Device {} already exists in the DB...".format(info2[device2]['hostname']) + bcolors.ENDC)
+                    print(BColors.OKBLUE + "Device {} already exists in the DB...".format(info2[device2]['hostname']) + BColors.ENDC)
 
 
 def ip_or_host(var):
@@ -199,11 +199,7 @@ def ip_or_host(var):
     r = re.match(pattern, var)
 
     if r:
-        if int(r.group(1)) > 0 and int(r.group(1)) <= 255 and \
-            int(r.group(2)) > 0 and int(r.group(2)) <= 255 and \
-            int(r.group(3)) > 0 and int(r.group(3)) <= 255 and \
-            int(r.group(4)) > 0 and int(r.group(4)) <= 255:
-
+        if (0 < int(r.group(1)) <= 255) and (0 < int(r.group(2)) <= 255) and (0 < int(r.group(3)) <= 255) and (0 < int(r.group(4)) <= 255):
             address_type = 'ip'
         else:
             raise Error('Wrong Format for an ip address!')
@@ -215,7 +211,7 @@ def ip_or_host(var):
 
 async def run():
     # Creating db_tasks
-    print(bcolors.HEADER + 'Starting create_db task...' + bcolors.ENDC)
+    print(BColors.HEADER + 'Starting create_db task...' + BColors.ENDC)
     await loop.create_task(create_db())
     # Converting seed host in a list
     seed_host_list = sys.argv[1].split(',')
@@ -232,13 +228,13 @@ async def run():
                 try:
                     host = await resolver.gethostbyaddr(address)
                 except aiodns.error.DNSError:
-                    print(bcolors.FAIL + f'***********Problem resolving the ip {address}...' + bcolors.ENDC)
+                    print(BColors.FAIL + f'***********Problem resolving the ip {address}...' + BColors.ENDC)
             elif ip_or_host(seed_host) == 'host':
                 # If host query the name to return the ip address
                 try:
                     ip_from_host = await resolver.query(seed_host, 'A')
                 except Exception as e:
-                    print(bcolors.FAIL + f"***********Problem resolving the hostname {seed_host}..." + bcolors.ENDC)
+                    print(BColors.FAIL + f"***********Problem resolving the hostname {seed_host}..." + BColors.ENDC)
                     continue
                 ip_from_host = ip_from_host[0].host
                 address = ip_from_host
@@ -252,9 +248,8 @@ async def run():
             output = await ssh_connect(host, address)
             # Check if there are still devices to connect to
             async with aiosqlite.connect('cdp.db') as conn:
-                async with conn.execute("SELECT COUNT(*) FROM devices WHERE "
-                          "status = 0 AND "
-                          "(capabilities LIKE '%Router%' OR capabilities LIKE '%Switch%' OR platform LIKE '%AIR%')") as cursor:
+                async with conn.execute("SELECT COUNT(*) FROM devices WHERE status = 0 AND "
+                                        "(capabilities LIKE '%Router%' OR capabilities LIKE '%Switch%' OR platform LIKE '%AIR%')") as cursor:
                     no_devices = await cursor.fetchone()
                     no_devices = no_devices[0]
             # Connect to the rest of the devices
@@ -262,9 +257,9 @@ async def run():
                 # Select the devices
                 async with aiosqlite.connect('cdp.db') as conn:
                     async with conn.execute("SELECT * FROM devices WHERE status = 0 AND "
-                                             "(capabilities LIKE '%Router%' OR capabilities LIKE '%Switch%' OR platform LIKE '%AIR%')") as cursor:
+                                            "(capabilities LIKE '%Router%' OR capabilities LIKE '%Switch%' OR platform LIKE '%AIR%')") as cursor:
                         resp = await cursor.fetchall()
-                #Create a bunch of tasks to connect to devices
+                # Create a bunch of tasks to connect to devices
                 tasks = []
                 for r in resp:
                     hostname = r[1]
@@ -279,22 +274,23 @@ async def run():
                                             "(capabilities LIKE '%Router%' OR capabilities LIKE '%Switch%' OR platform LIKE '%AIR%')") as cursor:
                         no_devices = await cursor.fetchone()
                         no_devices = no_devices[0]
-                print(bcolors.HEADER + "#########################" + bcolors.ENDC)
-                print(bcolors.HEADER + "# Devices to connect... #" + bcolors.ENDC)
-                print(bcolors.HEADER + f"#         {no_devices}            #" + bcolors.ENDC)
-                print(bcolors.HEADER + "#########################" + bcolors.ENDC)
+                print(BColors.HEADER + "#########################" + BColors.ENDC)
+                print(BColors.HEADER + "# Devices to connect... #" + BColors.ENDC)
+                print(BColors.HEADER + f"#         {no_devices}            #" + BColors.ENDC)
+                print(BColors.HEADER + "#########################" + BColors.ENDC)
+
 
 async def report():
     # Generate Report
-    print(bcolors.HEADER + "Generating Report..." + bcolors.ENDC)
+    print(BColors.HEADER + "Generating Report..." + BColors.ENDC)
     # Retrieve DB data
     try:
         async with aiosqlite.connect('cdp.db') as conn:
             async with conn.execute("SELECT * FROM devices WHERE "
-                         "capabilities LIKE '%Router%' OR capabilities LIKE '%Switch%' OR capabilities LIKE '%Seed%'") as cursor:
+                                    "capabilities LIKE '%Router%' OR capabilities LIKE '%Switch%' OR capabilities LIKE '%Seed%'") as cursor:
                 rows = await cursor.fetchall()
     except Exception as e:
-        print(bcolors.FAIL + "Error: {}".format(e.args[0]) + bcolors.ENDC)
+        print(BColors.FAIL + "Error: {}".format(e.args[0]) + BColors.ENDC)
         sys.exit(1)
     # Check File type requested
     if sys.argv[2] == 'txt':
@@ -308,8 +304,8 @@ async def report():
             f.write(str(row[0]) + '\t' + row[1] + '\t' + row[2] + '\t' + row[3] + '\t' + row[4] + '\n')
         f.close()
     else:
-        help()
-    print(bcolors.OKGREEN + "Report generated Successfuly!!!" + bcolors.ENDC)
+        help_function()
+    print(BColors.OKGREEN + "Report generated Successfully!!!" + BColors.ENDC)
     return
 
 
@@ -317,12 +313,12 @@ if __name__ == "__main__":
     start_time = time.time()
     # Check that the call has the right number of parameters
     if len(sys.argv) not in [3, 4]:
-        help()
+        help_function()
     else:
         # Connect to Devices
         if sys.argv[1] != 'report' and len(sys.argv) == 4:
             # Creating loop
-            print(bcolors.HEADER + 'Creating Loop...' + bcolors.ENDC)
+            print(BColors.HEADER + 'Creating Loop...' + BColors.ENDC)
             loop = asyncio.get_event_loop()
             resolver = aiodns.DNSResolver(loop=loop)
             loop.run_until_complete(run())
@@ -330,7 +326,7 @@ if __name__ == "__main__":
             loop = asyncio.get_event_loop()
             loop.run_until_complete(report())
         else:
-            help()
+            help_function()
     elapsed_time = time.time() - start_time
-    print((bcolors.OKGREEN + "#" * 50 + "\n" + bcolors.ENDC) * 2)
-    print(bcolors.OKGREEN + f"Script took {elapsed_time} seconds to run" + bcolors.ENDC)
+    print((BColors.OKGREEN + "#" * 50 + "\n" + BColors.ENDC) * 2)
+    print(BColors.OKGREEN + f"Script took {elapsed_time} seconds to run" + BColors.ENDC)
