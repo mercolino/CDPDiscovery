@@ -32,9 +32,9 @@ def help():
     :return: NULL
     """
     print(bcolors.BOLD + bcolors.UNDERLINE + "Usage:" + bcolors.ENDC)
-    print(bcolors.BOLD + "\tcdp_discovery seed(s)_host(s) username password" + bcolors.ENDC)
+    print(bcolors.BOLD + "\tasync_cdp_discovery seed(s)_host(s) username password" + bcolors.ENDC)
     print(bcolors.BOLD + "\t\tseed(s)_host(s): This can be a single host or multiple hosts separated by comma" + bcolors.ENDC)
-    print(bcolors.BOLD + "\tcdp_discovery report [tsv|txt]" + bcolors.ENDC)
+    print(bcolors.BOLD + "\tasync_cdp_discovery report [tsv|txt]" + bcolors.ENDC)
 
 
 async def process_cdp_output(entries_list):
