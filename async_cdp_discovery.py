@@ -5,6 +5,7 @@ import sys
 import re
 import netdev
 import time
+import ipaddress
 
 # Constants used on the script
 # Timeout for ssh connections and buffer receiving
@@ -36,6 +37,104 @@ def help_function():
     print(BColors.BOLD + "\tasync_cdp_discovery seed(s)_host(s) username password" + BColors.ENDC)
     print(BColors.BOLD + "\t\tseed(s)_host(s): This can be a single host or multiple hosts separated by comma" + BColors.ENDC)
     print(BColors.BOLD + "\tasync_cdp_discovery report [tsv|txt]" + BColors.ENDC)
+
+
+async def process_vlan_output(entries_list):
+    """
+    Function created to process the output of the command  /show vlan brief/
+    :param entries_list: The List with the lines of the received response
+    :return: it returns a list like [{vlan: , name:},...]
+    """
+    vlan_list = []
+    for entry in entries_list:
+        m = re.search('^([0-9]+)\s*(\S*)\s*', entry)
+        if m:
+            vlan = m.group(1)
+            name = m.group(2)
+            if vlan not in ['1002', '1003', '1004', '1005']:
+                vlan_list.append({'vlan': vlan,
+                                  'name': name})
+    return vlan_list
+
+
+async def process_ip_address_output(entries_list):
+    """
+    Function created to process the output of the command  /sh ip int | i line.*protocol|Internet.*address/ to get the ip address and subnets used in the device
+    :param entries_list: The List with the lines of the received response
+    :return: it returns a list like [{int: , phy_status: , prot_status: , subnet: , ip_int:}, ...]
+    """
+    ip_int_list = []
+    i = 0
+    for entry in entries_list:
+        m = re.search('^(.*)\s+is\s+(.*),\s+line protocol is (.*)$', entry)
+        if m:
+            int = m.group(1)
+            phy_status = m.group(2)
+            prot_status = m.group(3)
+            try:
+                n = re.search('^\s+Internet address is ([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+\/[0-9]+)', entries_list[i+1])
+                if n:
+                    ip_int = ipaddress.ip_interface(n.group(1))
+                    subnet = ip_int.network
+                else:
+                    ip_int = ''
+                    subnet = ''
+            except IndexError:
+                ip_int = ''
+                subnet = ''
+
+            ip_int_list.append({'int': int,
+                                'phy_status': phy_status,
+                                'prot_status': prot_status,
+                                'subnet': str(subnet),
+                                'ip_int': str(ip_int)})
+        i += 1
+
+    return ip_int_list
+
+
+async def process_vrf_output(entries_list):
+    """
+    Function created to process the output of the command  /show ip vrf interfaces/
+    :param entries_list: The List with the lines of the received response
+    :return: it returns a list like [{int: , vrf: , ip_int: },...]
+    """
+    vrf_list = []
+    for entry in entries_list:
+        m = re.search('^(\S+)\s+([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)\s+(\S+)\s+.*$', entry)
+        if m:
+            int = m.group(1)
+            ip_int = m.group(2)
+            vrf = m.group(3)
+            vrf_list.append({'int': int,
+                             'ip_int': ip_int,
+                             'vrf': vrf})
+    return vrf_list
+
+
+async def process_inventory_output(entries_list):
+    """
+    Function created to process the output of the command  /show inventory/
+    :param entries_list: The List with the lines of the received response
+    :return: it returns a list like [{name: , descr: , pid: , vid: , sn: },...]
+    """
+    inventory_list = []
+    inventory_dict = {}
+    i = 0
+    for entry in entries_list:
+        if entry[:4] == 'NAME':
+            m = re.search('^\s*NAME:\s*"(.*)"\s*,\s*DESCR:\s*"(.*)"\s*$', entries_list[i])
+            inventory_dict['name'] = m.group(1)
+            inventory_dict['descr'] = m.group(2)
+            n = re.search('^\s*PID:\s*(.*)\s*,\s*VID:\s*(.*)\s*,\s*SN:\s*(.*)\s*$', entries_list[i+1])
+            inventory_dict['pid'] = n.group(1)
+            inventory_dict['vid'] = n.group(2)
+            inventory_dict['sn'] = n.group(3)
+
+            inventory_list.append(inventory_dict)
+        inventory_dict = {}
+        i += 1
+    return inventory_list
 
 
 async def process_cdp_output(entries_list):
@@ -95,24 +194,56 @@ async def ssh_connect(host, ip):
     :return: The device info is the same dictionary returned by process_cdp_output()
     """
     # Connecting to the host
-    print(BColors.HEADER + "Connecting to {}({})...".format(host, ip) + BColors.ENDC)
+    print(BColors.HEADER + f"Connecting to {host}({ip})..." + BColors.ENDC)
+    # Sending Commands
     try:
         async with netdev.create(username=sys.argv[2], password=sys.argv[3], host=ip, device_type='cisco_ios', timeout=TIMEOUT) as ios:
             cdp_result = await ios.send_command('show cdp neighbor detail')
+            ip_address_results = await ios.send_command('sh ip int | i line.*protocol|Internet.*address')
+            vlan_results = await ios.send_command('show vlan brief')
+            vrf_results = await ios.send_command('show ip vrf interfaces')
+            inventory_results = await ios.send_command('show inventory')
     except Exception as e:
-        print(BColors.FAIL + "*****************Problem Connecting to {}...".format(host) + BColors.ENDC)
-        print(BColors.FAIL + "*****************Error: {}".format(e.args[0]) + BColors.ENDC)
-        async with aiosqlite.connect('cdp.db') as conn:
-            async with conn.execute('SELECT count(*) FROM devices WHERE hostname = ?', (host,)) as cursor:
-                n = await cursor.fetchone()
-                n = n[0]
-                # If there is a problem connecting update the database with status 2
-                if n != 0:
-                    await conn.execute('UPDATE devices SET status = 2 WHERE hostname = ?', (host,))
-                    await conn.commit()
-        return
-    data = cdp_result.split('\n')
-    device_info = await process_cdp_output(data)
+        print(BColors.FAIL + f"*****************Problem Connecting to {host}, Trying resolving the name..." + BColors.ENDC)
+        try:
+            connect_ip = await resolver.query(host, 'A')
+            async with netdev.create(username=sys.argv[2], password=sys.argv[3], host=connect_ip[0].host, device_type='cisco_ios', timeout=TIMEOUT) as ios:
+                cdp_result = await ios.send_command('show cdp neighbor detail')
+                ip_address_results = await ios.send_command('sh ip int | i line.*protocol|Internet.*address')
+                vlan_results = await ios.send_command('show vlan brief')
+                vrf_results = await ios.send_command('show ip vrf interfaces')
+                inventory_results = await ios.send_command('show inventory')
+        except Exception as e:
+            print(BColors.FAIL + f"*****************Resolving the name for {host} did not work..." + BColors.ENDC)
+            print(BColors.FAIL + f"*****************Error: {e}" + BColors.ENDC)
+            async with aiosqlite.connect('cdp.db') as conn:
+                async with conn.execute('SELECT count(*) FROM devices WHERE hostname = ?', (host,)) as cursor:
+                    n = await cursor.fetchone()
+                    n = n[0]
+                    # If there is a problem connecting update the database with status 2
+                    if n != 0:
+                        await conn.execute('UPDATE devices SET status = 2 WHERE hostname = ?', (host,))
+                        await conn.commit()
+            return
+    # Converting results from text to lists
+    cdp_data = cdp_result.split('\n')
+    ip_address_data = ip_address_results.split('\n')
+    vlan_data = vlan_results.split('\n')
+    vrf_data = vrf_results.split('\n')
+    inventory_data = inventory_results.split('\n')
+
+    # Processing data lists
+    cdp_device_info = await process_cdp_output(cdp_data)
+    ip_address_info = await process_ip_address_output(ip_address_data)
+    vrf_info = await process_vrf_output(vrf_data)
+    inventory_info = await process_inventory_output(inventory_data)
+
+    if vlan_data[0] not in ['% Ambiguous command:  \"show vlan brief\"']:
+        vlan_device_info = await process_vlan_output(vlan_data)
+        await insert_in_vlans(vlan_device_info, host, ip)
+    else:
+        print(BColors.FAIL + f"*****************Device {host} does not support sh vlan brief command..." + BColors.ENDC)
+
     # Update the DB to status 1 meaning that the device was followed
     async with aiosqlite.connect('cdp.db') as conn:
         async with conn.execute('SELECT count(*) FROM devices WHERE hostname = ?', (host,)) as cursor:
@@ -121,7 +252,10 @@ async def ssh_connect(host, ip):
         if n != 0:
             await conn.execute('UPDATE devices SET status = 1 WHERE hostname = ?', (host,))
             await conn.commit()
-    await insert_in_devices(device_info)
+    await insert_in_devices(cdp_device_info)
+    await insert_in_ip(ip_address_info, host, ip)
+    await insert_in_vrf(vrf_info, host, ip)
+    await insert_in_inventory(inventory_info, host, ip)
     return
 
 
@@ -135,13 +269,21 @@ async def create_db():
         # Drop the tables
         print(BColors.HEADER + 'Droping tables...' + BColors.ENDC)
         await conn.execute('DROP TABLE IF EXISTS devices')
+        await conn.execute('DROP TABLE IF EXISTS vlans')
+        await conn.execute('DROP TABLE IF EXISTS ip')
+        await conn.execute('DROP TABLE IF EXISTS vrf')
+        await conn.execute('DROP TABLE IF EXISTS inventory')
         await conn.commit()
         # Create the tables
         print(BColors.HEADER + 'Creating tables...' + BColors.ENDC)
         await conn.execute('CREATE TABLE devices (id INTEGER PRIMARY KEY, hostname, ip_address, platform, capabilities, status)')
+        await conn.execute('CREATE TABLE vlans (id INTEGER PRIMARY KEY, hostname, ip_address, vlan, name)')
+        await conn.execute('CREATE TABLE ip (id INTEGER PRIMARY KEY, hostname, ip_address, int, phy_status, prot_status, subnet, ip_int)')
+        await conn.execute('CREATE TABLE vrf (id INTEGER PRIMARY KEY, hostname, ip_address, int, ip_int, vrf)')
+        await conn.execute('CREATE TABLE inventory (id INTEGER PRIMARY KEY, hostname, ip_address, name, descr, pid, vid, sn)')
 
 
-async def check_if_in_table(host2):
+async def check_if_in_devices_table(host2):
     """
     Function to check if a device is already on the Database
     :param host2: Host to check
@@ -154,10 +296,10 @@ async def check_if_in_table(host2):
             n = await cursor.fetchone()
             n = n[0]
             if n == 0:
-                print(BColors.OKBLUE + "Device {} does not exists in the DB...".format(host2) + BColors.ENDC)
+                print(BColors.OKBLUE + f"Device {host2} does not exists in the DB..." + BColors.ENDC)
                 return False
             else:
-                print(BColors.OKBLUE + "Device {} already exists in the DB...".format(host2) + BColors.ENDC)
+                print(BColors.OKBLUE + f"Device {host2} already exists in the DB..." + BColors.ENDC)
                 return True
 
 
@@ -186,7 +328,130 @@ async def insert_in_devices(info2):
                                               0))
                     await conn.commit()
                 else:
-                    print(BColors.OKBLUE + "Device {} already exists in the DB...".format(info2[device2]['hostname']) + BColors.ENDC)
+                    print(BColors.OKBLUE + f"Device {info2[device2]['hostname']} already exists in the DB..." + BColors.ENDC)
+
+
+async def insert_in_vlans(vlans, h, i):
+    """
+    Function to insert data to the database in the table vlans
+    :param vlans: List with the vlans gathered from processing the output of the sh vlan brief
+    :param h: Hostname where the vlan data comes from
+    :param i: Ip address where the vlan data comes from
+    :return: NULL
+    """
+    print(BColors.HEADER + 'Connecting to the database to insert vlans in DB...' + BColors.ENDC)
+    async with aiosqlite.connect('cdp.db') as conn:
+        for entry in vlans:
+            # Checking that the vlan is not already on the DB
+            print(BColors.HEADER + f"Checking that vlan {entry['vlan']} with name {entry['name']} for host {h} is not in the DB..." + BColors.ENDC)
+            async with conn.execute('SELECT COUNT(*) FROM vlans WHERE hostname = ? AND vlan = ?', (h, entry['vlan'],)) as cursor:
+                n = await cursor.fetchone()
+                n = n[0]
+                if n == 0:
+                    # Inserting the vlan in the DB
+                    print(BColors.OKGREEN + f"Inserting into VLANS {entry['vlan']} with name {entry['name']}..." + BColors.ENDC)
+                    await conn.execute('INSERT INTO vlans(hostname, ip_address, vlan, name)\
+                         VALUES(?,?,?,?)', (h,
+                                            i,
+                                            entry['vlan'],
+                                            entry['name']))
+                    await conn.commit()
+                else:
+                    print(BColors.OKBLUE + f"Vlan {entry['vlan']} with name {entry['name']} already exists in the DB for host {h}..." + BColors.ENDC)
+
+
+async def insert_in_ip(ip_info, h, i):
+    """
+    Function to insert data to the database in the table ip
+    :param ip_info: List with the ip info gathered from processing the output of the sh ip int | i line.*protocol|Internet.*address
+    :param h: Hostname where the ip info data comes from
+    :param i: Ip address where the ip ip info data comes from
+    :return: NULL
+    """
+    print(BColors.HEADER + 'Connecting to the database to insert ip info in DB...' + BColors.ENDC)
+    async with aiosqlite.connect('cdp.db') as conn:
+        for entry in ip_info:
+            # Checking that the vlan is not already on the DB
+            print(BColors.HEADER + f"Checking that interface {entry['int']} for host {h} is not in the DB..." + BColors.ENDC)
+            async with conn.execute('SELECT COUNT(*) FROM ip WHERE hostname = ? AND int = ?', (h, entry['int'],)) as cursor:
+                n = await cursor.fetchone()
+                n = n[0]
+                if n == 0:
+                    # Inserting the vlan in the DB
+                    print(BColors.OKGREEN + f"Inserting into IP {entry['int']}..." + BColors.ENDC)
+                    await conn.execute('INSERT INTO ip(hostname, ip_address, int, phy_status, prot_status, subnet, ip_int)\
+                         VALUES(?,?,?,?,?,?,?)', (h,
+                                                  i,
+                                                  entry['int'],
+                                                  entry['phy_status'],
+                                                  entry['prot_status'],
+                                                  entry['subnet'],
+                                                  entry['ip_int']))
+                    await conn.commit()
+                else:
+                    print(BColors.OKBLUE + f"Interface {entry['int']} already exists in the DB for host {h}..." + BColors.ENDC)
+
+
+async def insert_in_vrf(vrf_info, h, i):
+    """
+    Function to insert data to the database in the table vrf
+    :param vrf_info: List with the vrf info gathered from processing the output of the sh ip vrf interfaces
+    :param h: Hostname where the vrf info data comes from
+    :param i: Ip address where the vrf ip info data comes from
+    :return: NULL
+    """
+    print(BColors.HEADER + 'Connecting to the database to insert ip info in DB...' + BColors.ENDC)
+    async with aiosqlite.connect('cdp.db') as conn:
+        for entry in vrf_info:
+            # Checking that the vlan is not already on the DB
+            print(BColors.HEADER + f"Checking that interface {entry['int']} for host {h} is not in the DB..." + BColors.ENDC)
+            async with conn.execute('SELECT COUNT(*) FROM vrf WHERE hostname = ? AND int = ?', (h, entry['int'],)) as cursor:
+                n = await cursor.fetchone()
+                n = n[0]
+                if n == 0:
+                    # Inserting the vlan in the DB
+                    print(BColors.OKGREEN + f"Inserting into VRF {entry['int']}..." + BColors.ENDC)
+                    await conn.execute('INSERT INTO vrf(hostname, ip_address, int, ip_int, vrf)\
+                         VALUES(?,?,?,?,?)', (h,
+                                              i,
+                                              entry['int'],
+                                              entry['ip_int'],
+                                              entry['vrf']))
+                    await conn.commit()
+                else:
+                    print(BColors.OKBLUE + f"Interface {entry['int']} already exists in the DB for host {h}..." + BColors.ENDC)
+
+
+async def insert_in_inventory(inventory_info, h, i):
+    """
+    Function to insert data to the database in the table inventory
+    :param inventory_info: List with the inventory info gathered from processing the output of the sh inventory
+    :param h: Hostname where the inventory info data comes from
+    :param i: Ip address where the inventory ip info data comes from
+    :return: NULL
+    """
+    print(BColors.HEADER + 'Connecting to the database to insert inventory info in DB...' + BColors.ENDC)
+    async with aiosqlite.connect('cdp.db') as conn:
+        for entry in inventory_info:
+            # Checking that the vlan is not already on the DB
+            print(BColors.HEADER + f"Checking that part {entry['name']} with SN {entry['sn']} for host {h} is not in the DB..." + BColors.ENDC)
+            async with conn.execute('SELECT COUNT(*) FROM inventory WHERE sn = ?', (entry['sn'],)) as cursor:
+                n = await cursor.fetchone()
+                n = n[0]
+                if n == 0:
+                    # Inserting the vlan in the DB
+                    print(BColors.OKGREEN + f"Inserting into INVENTORY part {entry['name']} with SN {entry['sn']}..." + BColors.ENDC)
+                    await conn.execute('INSERT INTO inventory(hostname, ip_address, name, descr, pid, vid, sn)\
+                         VALUES(?,?,?,?,?,?,?)', (h,
+                                                  i,
+                                                  entry['name'],
+                                                  entry['descr'],
+                                                  entry['pid'],
+                                                  entry['vid'],
+                                                  entry['sn']))
+                    await conn.commit()
+                else:
+                    print(BColors.OKBLUE + f"Part {entry['name']} with SN {entry['sn']} already exists in the DB for host {h}..." + BColors.ENDC)
 
 
 def ip_or_host(var):
@@ -220,7 +485,7 @@ async def run():
         # Strip any whitespaces from the seed host
         seed_host = seed_host.strip()
         # Check if the seed host is not already in the Database
-        if not await check_if_in_table(seed_host):
+        if not await check_if_in_devices_table(seed_host):
             # Check if the seed value is an ip or a host
             if ip_or_host(sys.argv[1]) == 'ip':
                 address = sys.argv[1]
@@ -290,7 +555,7 @@ async def report():
                                     "capabilities LIKE '%Router%' OR capabilities LIKE '%Switch%' OR capabilities LIKE '%Seed%'") as cursor:
                 rows = await cursor.fetchall()
     except Exception as e:
-        print(BColors.FAIL + "Error: {}".format(e.args[0]) + BColors.ENDC)
+        print(BColors.FAIL + f"Error: {e.args[0]}" + BColors.ENDC)
         sys.exit(1)
     # Check File type requested
     if sys.argv[2] == 'txt':
